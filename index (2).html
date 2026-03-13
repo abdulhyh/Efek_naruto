@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Naruto vs Sasuke Hand Tracking</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+  <style>
+    body { margin: 0; overflow: hidden; background-color: black; }
+    #v_src, #out {
+      position: absolute; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      object-fit: cover; transform: scaleX(-1);
+    }
+    #out { z-index: 2; pointer-events: none; }
+    
+    .fx {
+      position: absolute; height: auto; top: 0; left: 0;
+      transform: translate(-50%, -50%);
+      pointer-events: none; display: none;
+      mix-blend-mode: screen; /* Biar transparan */
+      z-index: 20;
+    }
+
+    /* Ukuran Jurus */
+    #n { width: 350px; filter: drop-shadow(0 0 20px #00aaff); }
+    #s { width: 450px; filter: drop-shadow(0 0 20px #ffffff); }
+  </style>
+</head>
+<body>
+
+  <video id="v_src" autoplay playsinline></video>
+  <canvas id="out"></canvas>
+
+  <video id="n" class="fx" src="https://framerusercontent.com/assets/B7m3jKOniK62J0XFkXl1jO0.mp4" muted autoplay loop playsinline></video>
+  <video id="s" class="fx" src="https://framerusercontent.com/assets/2fUjN2O2p9gU2O1f.mp4" muted autoplay loop playsinline></video>
+
+  <script>
+    const vElement = document.getElementById('v_src');
+    const cElement = document.getElementById('out');
+    const ctx = cElement.getContext('2d');
+    const n = document.getElementById('n');
+    const s = document.getElementById('s');
+
+    let pwr = [0, 0]; 
+
+    // Fungsi cek apakah telapak tangan terbuka
+    function checkOpen(pts) {
+        let count = 0;
+        const wrist = pts[0];
+        const tips = [8, 12, 16, 20];
+        const pips = [6, 10, 14, 18];
+        for (let i = 0; i < tips.length; i++) {
+            const tip = pts[tips[i]];
+            const pip = pts[pips[i]];
+            if (Math.hypot(tip.x - wrist.x, tip.y - wrist.y) > Math.hypot(pip.x - wrist.x, pip.y - wrist.y)) count++;
+        }
+        return count >= 3;
+    }
+
+    function onResults(res) {
+        cElement.width = vElement.videoWidth;
+        cElement.height = vElement.videoHeight;
+        ctx.save();
+        ctx.clearRect(0, 0, cElement.width, cElement.height);
+
+        n.style.display = 'none';
+        s.style.display = 'none';
+
+        if (res.multiHandLandmarks && res.multiHandedness) {
+            res.multiHandLandmarks.forEach((pts, i) => {
+                const label = res.multiHandedness[i].label; // Left atau Right
+                const isR = label === 'Right';
+                const idx = isR ? 1 : 0;
+
+                // Gambar Skeleton Biru
+                drawConnectors(ctx, pts, HAND_CONNECTIONS, {color: '#00d4ff', lineWidth: 3});
+                drawLandmarks(ctx, pts, {color: '#ffffff', lineWidth: 1, radius: 2});
+
+                const open = checkOpen(pts);
+                if (open) {
+                    const wrist = pts[0];
+                    const knk = pts[9];
+                    const vid = isR ? s : n;
+
+                    // Posisi Jurus di Telapak Tangan
+                    const tx = (wrist.x + knk.x) / 2;
+                    const ty = (wrist.y + knk.y) / 2;
+
+                    vid.style.left = `${(1 - tx) * window.innerWidth}px`;
+                    vid.style.top = `${ty * window.innerHeight}px`;
+                    vid.style.display = 'block';
+                }
+            });
+        }
+        ctx.restore();
+    }
+
+    const h = new Hands({
+        locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+    });
+
+    h.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7
+    });
+
+    h.onResults(onResults);
+
+    const cam = new Camera(vElement, {
+        onFrame: async () => { await h.send({ image: vElement }); },
+        width: 1280, height: 720
+    });
+    cam.start();
+  </script>
+</body>
+</html>
